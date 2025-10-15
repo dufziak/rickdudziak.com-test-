@@ -7,48 +7,34 @@ import WeatherDashboard from '@/components/WeatherDashboard';
 import TaskManagementApp from '@/components/TaskManagementApp';
 import WorryTreeApp from '@/components/WorryTreeApp';
 import { Toaster } from '@/components/ui/toaster';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase'; // Import your Firebase auth instance
 
-const ProtectedRoute = ({ isLoggedIn, children }) => {
-  if (!isLoggedIn) {
+const ProtectedRoute = ({ currentUser, children }) => {
+  if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
   return children;
 };
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const setupUser = () => {
-    const dummyUser = {
-      username: 'admin',
-      password: 'password',
-    };
-    localStorage.setItem('user', JSON.stringify(dummyUser));
-  };
-
   useEffect(() => {
-    setupUser();
-    const loggedInStatus = localStorage.getItem('isLoggedIn');
-    if (loggedInStatus === 'true') {
-      setIsLoggedIn(true);
-    }
-    setLoading(false);
+    // This listener runs whenever the user's login state changes
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setCurrentUser(user);
+      setLoading(false);
+    });
+
+    // Cleanup function to detach the listener when the component unmounts
+    return unsubscribe;
   }, []);
 
-  const handleLogin = (username, password) => {
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    if (storedUser && username === storedUser.username && password === storedUser.password) {
-      localStorage.setItem('isLoggedIn', 'true');
-      setIsLoggedIn(true);
-      return true;
-    }
-    return false;
-  };
-
   const handleLogout = () => {
-    localStorage.removeItem('isLoggedIn');
-    setIsLoggedIn(false);
+    // Firebase handles the logout logic
+    auth.signOut();
   };
   
   if (loading) {
@@ -68,11 +54,12 @@ function App() {
       
       <div className="min-h-screen bg-[#121212]">
         <Routes>
-          <Route path="/login" element={isLoggedIn ? <Navigate to="/" /> : <LandingPage onLogin={handleLogin} />} />
+          {/* The login page no longer needs onLogin prop */}
+          <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LandingPage />} />
           <Route 
             path="/" 
             element={
-              <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <ProtectedRoute currentUser={currentUser}>
                 <ProjectsPage onLogout={handleLogout} />
               </ProtectedRoute>
             } 
@@ -80,7 +67,7 @@ function App() {
           <Route 
             path="/weather" 
             element={
-              <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <ProtectedRoute currentUser={currentUser}>
                 <WeatherDashboard />
               </ProtectedRoute>
             } 
@@ -88,7 +75,7 @@ function App() {
           <Route 
             path="/tasks" 
             element={
-              <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <ProtectedRoute currentUser={currentUser}>
                 <TaskManagementApp />
               </ProtectedRoute>
             } 
@@ -96,12 +83,12 @@ function App() {
           <Route 
             path="/worry-tree" 
             element={
-              <ProtectedRoute isLoggedIn={isLoggedIn}>
-                <WorryTreeApp />
+              <ProtectedRoute currentUser={currentUser}>
+                <WorryTreeApp currentUser={currentUser} />
               </ProtectedRoute>
             } 
           />
-           <Route path="*" element={<Navigate to={isLoggedIn ? "/" : "/login"} />} />
+           <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
         </Routes>
       </div>
       

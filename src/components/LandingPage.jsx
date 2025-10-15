@@ -1,36 +1,66 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, User, Lock } from 'lucide-react';
+import { ArrowRight, User, Lock, Loader2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/firebase';
 
-const LandingPage = ({ onLogin }) => {
+const LandingPage = () => {
   const { toast } = useToast();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSigningUp, setIsSigningUp] = useState(false);
 
-  const handleFormSubmit = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const loginSuccess = onLogin(username, password);
+    setIsLoading(true);
 
-    if (loginSuccess) {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       toast({
         title: "Login Successful!",
         description: "Welcome back! Redirecting to your projects...",
         className: "bg-[#1e1e1e] text-white border-[#00ff88]",
       });
-    } else {
+    } catch (error) {
       toast({
         variant: "destructive",
         title: "Login Failed",
-        description: "Invalid username or password. Please try again.",
+        description: `Error: ${error.code}`,
         className: "bg-[#1e1e1e] text-white border-red-500",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
-  
+
+  const handleSignUp = async () => {
+    setIsSigningUp(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email, password);
+      
+      toast({
+        title: "Account Created!",
+        description: "Your new account has been created and you are now logged in. Redirecting to your projects...",
+        className: "bg-[#1e1e1e] text-white border-[#00ff88]",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Sign-up Failed",
+        description: `Error: ${error.code}`,
+        className: "bg-[#1e1e1e] text-white border-red-500",
+      });
+    } finally {
+      setIsSigningUp(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-grid-[#1a1a1a]/[0.2]">
       <motion.div
@@ -55,19 +85,19 @@ const LandingPage = ({ onLogin }) => {
               </p>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-6 text-left">
+            <form onSubmit={handleLogin} className="space-y-6 text-left">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-sm font-medium text-[#c0c0c0]">Username</Label>
+                <Label htmlFor="email" className="text-sm font-medium text-[#c0c0c0]">Email</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-[#666]" />
                   <Input 
-                    type="text" 
-                    id="username" 
-                    placeholder="rickdudziak" 
+                    type="email" 
+                    id="email" 
+                    placeholder="name@example.com" 
                     required 
                     className="pl-10"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
               </div>
@@ -95,13 +125,40 @@ const LandingPage = ({ onLogin }) => {
               >
                 <Button
                   type="submit"
+                  disabled={isLoading}
                   className="w-full bg-[#00ff88] hover:bg-[#00dd77] text-[#121212] font-semibold px-8 py-6 text-lg rounded-lg transition-all duration-300 shadow-lg hover:shadow-[#00ff88]/20"
                 >
-                  Login
-                  <ArrowRight className="ml-2 h-5 w-5" />
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      Login
+                      <ArrowRight className="ml-2 h-5 w-5" />
+                    </>
+                  )}
                 </Button>
               </motion.div>
             </form>
+            
+            {/* New section for Sign-up */}
+            <div className="flex items-center space-x-2 justify-center mt-4">
+              <span className="text-sm text-[#a0a0a0]">Don't have an account?</span>
+              <Button
+                variant="link"
+                onClick={handleSignUp}
+                disabled={isSigningUp}
+                className="text-[#00ff88] hover:text-[#00dd77] px-0"
+              >
+                {isSigningUp ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Sign up
+                  </>
+                )}
+              </Button>
+            </div>
           </motion.div>
         </div>
       </motion.div>

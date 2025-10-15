@@ -4,19 +4,22 @@ import { LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ProjectCard from '@/components/ProjectCard';
 import { useToast } from '@/components/ui/use-toast';
+import { auth } from '@/firebase'; // Import Firebase auth
 
-const ProjectsPage = ({ onLogout }) => {
+const ProjectsPage = () => {
   const { toast } = useToast();
 
-  const handleLogout = () => {
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-      className: "bg-[#1e1e1e] text-white border-[#00ff88]",
-    });
-    setTimeout(() => {
-      onLogout();
-    }, 1000);
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out.",
+        className: "bg-[#1e1e1e] text-white border-[#00ff88]",
+      });
+    } catch (e) {
+      console.error('Error logging out:', e);
+    }
   };
 
   const projects = [
@@ -107,8 +110,10 @@ const ProjectsPage = ({ onLogout }) => {
           {projects.map((project, index) => (
             <ProjectCard
               key={project.id}
-              project={project}
-              index={index}
+              title={project.title}
+              description={project.description}
+              link={project.link}
+              externalLink={project.link}
             />
           ))}
         </motion.div>
