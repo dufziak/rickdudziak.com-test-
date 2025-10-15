@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trash2, Plus, ArrowLeft, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast';
 import {
   collection,
   addDoc,
@@ -24,14 +25,18 @@ const WorryTreeApp = ({ currentUser }) => {
   const [isAdding, setIsAdding] = useState(false);
   
   // New state variables for the CBT flow and tabs
-  const [step, setStep] = useState(1); // 1: Initial input, 2: Actionable question, 3: "Right now?" question, 4: Action or Let go, 5: Schedule it
-  const [worryType, setWorryType] = useState(null); // 'actionable' or 'non-actionable'
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'completed'
+  const [step, setStep] = useState(1);
+  const [worryType, setWorryType] = useState(null);
+  const [activeTab, setActiveTab] = useState('pending');
+  const [filter, setFilter] = useState('all');
 
   // New state for scheduled worries
   const [scheduledSolution, setScheduledSolution] = useState('');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+
+  // Toast hook
+  const { toast } = useToast();
 
   // Load worries from Firestore on component mount or user change
   useEffect(() => {
@@ -70,7 +75,7 @@ const WorryTreeApp = ({ currentUser }) => {
         scheduledDateTime: scheduledDateTime,
         userId: currentUser.uid,
         createdAt: new Date(),
-        status: 'pending', // Set initial status
+        status: 'pending',
       });
       setWorries([...worries, { id: docRef.id, text: worryText, type: type, solution: solution, scheduledDateTime: scheduledDateTime, status: 'pending' }]);
       resetFlow();
@@ -95,6 +100,10 @@ const WorryTreeApp = ({ currentUser }) => {
       const worryRef = doc(db, 'worries', id);
       await updateDoc(worryRef, { status: 'completed' });
       setWorries(worries.map(worry => worry.id === id ? { ...worry, status: 'completed' } : worry));
+      toast({
+        title: 'Worry completed!',
+        description: 'Great job letting it go or taking action.',
+      });
     } catch (e) {
       console.error("Error completing worry: ", e);
     }
@@ -116,8 +125,19 @@ const WorryTreeApp = ({ currentUser }) => {
     setScheduledTime('');
   };
 
+  const handleBackStep = () => {
+    setStep(prevStep => prevStep - 1);
+  };
+
   const pendingWorries = worries.filter(worry => worry.status === 'pending');
   const completedWorries = worries.filter(worry => worry.status === 'completed');
+
+  const filteredWorries = pendingWorries.filter(worry => {
+    if (filter === 'all') {
+      return true;
+    }
+    return worry.type === filter;
+  });
 
   if (isLoading) {
     return (
@@ -163,109 +183,113 @@ const WorryTreeApp = ({ currentUser }) => {
                   type="text"
                   value={currentWorry}
                   onChange={(e) => setCurrentWorry(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (currentWorry.trim() !== '') {
+                        setStep(2);
+                      }
+                    }
+                  }}
                   placeholder="Write your worry here..."
                   className="flex-1 bg-[#121212] text-white border-none focus:ring-1 focus:ring-[#00ff88]"
                 />
-                <Button type="submit" className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
-                  <Plus className="h-5 w-5 mr-2" /> Add
+                <Button type="submit" disabled={!currentWorry.trim()} className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                  {isAdding ? <Loader2 className="h-5 w-5 animate-spin" /> : <><Plus className="h-5 w-5 mr-2" /> Add</>}
                 </Button>
               </form>
             </CardContent>
           </Card>
         )}
 
-        {step === 2 && (
+        {step > 1 && (
           <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
             <CardHeader>
-              <CardTitle className="text-white">Is this a worry you can do something about?</CardTitle>
-            </CardHeader>
-            <CardContent className="flex space-x-2">
-              <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(3); }}>Yes</Button>
-              <Button className="flex-1 bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('non-actionable'); setStep(4); }}>No</Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {step === 3 && worryType === 'actionable' && (
-          <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-white">Can you take action right now?</CardTitle>
-            </CardHeader>
-            <CardContent className="flex space-x-2">
-              <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => setStep(5)}>Yes, Now</Button>
-              <Button className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={() => setStep(6)}>No, Later</Button>
-            </CardContent>
-          </Card>
-        )}
-        
-        {step === 4 && worryType === 'non-actionable' && (
-          <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-white">Let it go.</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-[#a0a0a0] mb-4">
-                This is a worry you can't do anything about. There is no solution.
-              </p>
-              <Button onClick={() => saveWorry(currentWorry, worryType)} className="w-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
-                <CheckCircle className="h-5 w-5 mr-2" />
-                Done
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {step === 5 && (
-          <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-white">What will you do?</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const solution = e.target.solution.value;
-                if (solution.trim() !== '') {
-                  saveWorry(currentWorry, worryType, solution);
-                }
-              }} className="flex space-x-2">
-                <Input
-                  type="text"
-                  name="solution"
-                  placeholder="Plan your action..."
-                  className="flex-1 bg-[#121212] text-white border-none focus:ring-1 focus:ring-[#00ff88]"
-                />
-                <Button type="submit" disabled={isAdding} className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
-                  {isAdding ? <Loader2 className="h-5 w-5 animate-spin" /> : "Save"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-        
-        {step === 6 && (
-          <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-white">Schedule It</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-[#a0a0a0] mb-4 text-sm">
-                Set a specific date and/or time to deal with this. Once scheduled, let the worry go until then.
-              </p>
-              <div className="flex space-x-2">
-                <Input type="date" className="flex-1" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}/>
-                <Input type="time" className="flex-1" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)}/>
+              <div className="flex justify-between items-center mb-2 text-sm text-gray-400">
+                {step > 1 && (
+                  <motion.button 
+                    onClick={handleBackStep}
+                    className="flex items-center text-green-400 hover:text-green-500 transition-colors"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <ArrowLeft size={16} className="mr-1" /> Back
+                  </motion.button>
+                )}
+                <span>Step {step - 1} of 5</span>
               </div>
-              <Input
-                type="text"
-                name="solution"
-                placeholder="e.g., Call the bank"
-                className="w-full mt-4"
-                value={scheduledSolution}
-                onChange={(e) => setScheduledSolution(e.target.value)}
-              />
-              <Button className="w-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" onClick={handleScheduleWorry}>
-                Okay, I've Scheduled It
-              </Button>
+              {step === 2 && <CardTitle className="text-white">Is this a worry you can do something about?</CardTitle>}
+              {step === 3 && worryType === 'actionable' && <CardTitle className="text-white">Can you take action right now?</CardTitle>}
+              {step === 4 && worryType === 'non-actionable' && <CardTitle className="text-white">Let it go.</CardTitle>}
+              {step === 5 && <CardTitle className="text-white">What will you do?</CardTitle>}
+              {step === 6 && <CardTitle className="text-white">Schedule It</CardTitle>}
+            </CardHeader>
+            <CardContent>
+              {step === 2 && (
+                <div className="flex space-x-2">
+                  <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(3); }}>Yes, I can act</Button>
+                  <Button className="flex-1 bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('non-actionable'); setStep(4); }}>No, I can't</Button>
+                </div>
+              )}
+              {step === 3 && worryType === 'actionable' && (
+                <div className="flex space-x-2">
+                  <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => setStep(5)}>Yes, Now</Button>
+                  <Button className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={() => setStep(6)}>No, Later</Button>
+                </div>
+              )}
+              {step === 4 && worryType === 'non-actionable' && (
+                <>
+                  <p className="text-[#a0a0a0] mb-4">
+                    This is a worry you can't do anything about. There is no solution.
+                  </p>
+                  <Button onClick={() => saveWorry(currentWorry, worryType)} className="w-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                    <CheckCircle className="h-5 w-5 mr-2" />
+                    Done
+                  </Button>
+                </>
+              )}
+              {step === 5 && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const solution = e.target.solution.value;
+                  if (solution.trim() !== '') {
+                    saveWorry(currentWorry, worryType, solution);
+                  }
+                }} className="flex space-x-2">
+                  <Input
+                    type="text"
+                    name="solution"
+                    placeholder="Plan your action..."
+                    className="flex-1 bg-[#121212] text-white border-none focus:ring-1 focus:ring-[#00ff88]"
+                  />
+                  <Button type="submit" disabled={isAdding} className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                    {isAdding ? <Loader2 className="h-5 w-5 animate-spin" /> : "Save"}
+                  </Button>
+                </form>
+              )}
+              {step === 6 && (
+                <>
+                  <p className="text-[#a0a0a0] mb-4 text-sm">
+                    Set a specific date and/or time to deal with this. Once scheduled, let the worry go until then.
+                  </p>
+                  <div className="flex space-x-2">
+                    <Input type="date" className="flex-1" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}/>
+                    <Input type="time" className="flex-1" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)}/>
+                  </div>
+                  <Input
+                    type="text"
+                    name="solution"
+                    placeholder="e.g., Call the bank"
+                    className="w-full mt-4"
+                    value={scheduledSolution}
+                    onChange={(e) => setScheduledSolution(e.target.value)}
+                  />
+                  <Button className="w-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" onClick={handleScheduleWorry}>
+                    Okay, I've Scheduled It
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
@@ -288,14 +312,21 @@ const WorryTreeApp = ({ currentUser }) => {
                 Completed
               </Button>
             </div>
+            {activeTab === 'pending' && (
+              <div className="flex space-x-2 mt-4">
+                <Button onClick={() => setFilter('all')} variant={filter === 'all' ? 'default' : 'outline'} className="text-sm">All</Button>
+                <Button onClick={() => setFilter('actionable')} variant={filter === 'actionable' ? 'default' : 'outline'} className="text-sm">Actionable</Button>
+                <Button onClick={() => setFilter('non-actionable')} variant={filter === 'non-actionable' ? 'default' : 'outline'} className="text-sm">Non-Actionable</Button>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             {activeTab === 'pending' && (
-              pendingWorries.length === 0 ? (
+              filteredWorries.length === 0 ? (
                 <p className="text-[#a0a0a0] text-center">No pending worries. Add one above!</p>
               ) : (
-                <ul className="space-y-4">
-                  {pendingWorries.map((worry) => (
+                <ul className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                  {filteredWorries.map((worry) => (
                     <motion.li
                       key={worry.id}
                       initial={{ opacity: 0, y: 10 }}
