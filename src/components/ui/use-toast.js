@@ -34,7 +34,7 @@ const toastStore = {
   }
 }
 
-export const toast = ({ ...props }) => {
+export const toast = ({ title = '', description = '', ...props }) => {
   const id = generateId()
 
   const update = (props) =>
@@ -80,6 +80,10 @@ export function useToast() {
     const timeouts = []
 
     state.toasts.forEach((toast) => {
+      if (!toast) {
+        return
+      }
+
       if (toast.duration === Infinity) {
         return
       }

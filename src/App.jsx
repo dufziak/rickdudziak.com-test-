@@ -91,8 +91,6 @@ function App() {
            <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
         </Routes>
       </div>
-      
-      <Toaster />
     </>
   );
 }
