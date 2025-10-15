@@ -1,3 +1,5 @@
+// src/components/ProjectsPage.jsx
+
 import React from 'react';
 import { motion } from 'framer-motion';
 import { LogOut } from 'lucide-react';
@@ -113,7 +115,7 @@ const ProjectsPage = () => {
               title={project.title}
               description={project.description}
               link={project.link}
-              externalLink={project.link}
+              external={!project.internal}
             />
           ))}
         </motion.div>

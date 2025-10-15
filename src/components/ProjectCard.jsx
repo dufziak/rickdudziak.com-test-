@@ -1,53 +1,35 @@
+// src/components/ProjectCard.jsx
+
 import React from 'react';
-import { motion } from 'framer-motion';
-import { ExternalLink, ArrowRight } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { ArrowUpRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 
-const ProjectCard = ({ project, index }) => {
-  const navigate = useNavigate();
-
-  const handleViewProject = () => {
-    if (project.internal) {
-      navigate(project.link);
-    } else {
-      window.open(project.link, '_blank', 'noopener,noreferrer');
-    }
-  };
-
+const ProjectCard = ({ title, description, link, external }) => {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
+    <motion.a
+      href={link}
+      target={external ? '_blank' : '_self'}
+      rel={external ? 'noopener noreferrer' : ''}
+      initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1, duration: 0.5 }}
-      whileHover={{ y: -8 }}
-      className="bg-[#1e1e1e] rounded-xl p-6 border border-[#2a2a2a] hover:border-[#00ff88]/30 transition-all duration-300 shadow-lg hover:shadow-[#00ff88]/10"
+      transition={{ duration: 0.5 }}
+      className="block"
     >
-      <div className="flex flex-col justify-between h-full">
-        <div className="space-y-4">
-            <h3 className="text-xl font-bold text-white">
-                {project.title}
-            </h3>
-            <p className="text-[#b0b0b0] text-sm leading-relaxed">
-                {project.description}
-            </p>
-        </div>
-
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className="mt-6"
-        >
-          <Button
-            onClick={handleViewProject}
-            className="w-full bg-[#00ff88] hover:bg-[#00dd77] text-[#121212] font-semibold rounded-lg transition-all duration-300 shadow-md hover:shadow-lg"
-          >
-            {project.internal ? 'Open App' : 'View Project'}
-            {project.internal ? <ArrowRight className="ml-2 h-4 w-4" /> : <ExternalLink className="ml-2 h-4 w-4" />}
-          </Button>
-        </motion.div>
-      </div>
-    </motion.div>
+      <Card className="bg-[#1e1e1e] text-white border border-[#2a2a2a] rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:scale-[1.02] hover:shadow-2xl hover:border-[#00ff88]">
+        <CardHeader>
+          <CardTitle className="flex justify-between items-center text-[#00ff88]">
+            <span>{title}</span>
+            <ArrowUpRight className="h-6 w-6 text-[#888888] transition-all duration-300 group-hover:text-[#00ff88]" />
+          </CardTitle>
+          <CardDescription className="text-[#a0a0a0]">{description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Content here */}
+        </CardContent>
+      </Card>
+    </motion.a>
   );
 };
 
