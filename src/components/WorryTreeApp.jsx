@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Trash2, Plus, ArrowLeft, Loader2, CheckCircle, XCircle, Zap, ArrowRight, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -106,7 +107,6 @@ const WorryTreeApp = ({ currentUser }) => {
     }
   };
 
-
   const deleteWorry = async (id) => {
     try {
       await deleteDoc(doc(db, 'worries', id));
@@ -158,7 +158,7 @@ const WorryTreeApp = ({ currentUser }) => {
   const handleBackStep = () => {
     setStep(prevStep => prevStep - 1);
   };
-
+  
   const pendingWorries = worries.filter(worry => worry.status === 'pending');
   const completedWorries = worries.filter(worry => worry.status === 'completed');
 
@@ -311,25 +311,15 @@ const WorryTreeApp = ({ currentUser }) => {
             </CardContent>
           </Card>
         )}
-
+        
         <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
           <CardHeader>
-            <div className="flex justify-between items-center space-x-2">
-              <Button
-                variant="ghost"
-                onClick={() => setActiveTab('pending')}
-                className={`flex-1 text-center ${activeTab === 'pending' ? 'text-[#00ff88] border-b-2 border-[#00ff88]' : 'text-[#a0a0a0] border-b-2 border-transparent'}`}
-              >
-                Your Worries
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setActiveTab('completed')}
-                className={`flex-1 text-center ${activeTab === 'completed' ? 'text-[#00ff88] border-b-2 border-[#00ff88]' : 'text-[#a0a0a0] border-b-2 border-transparent'}`}
-              >
-                Completed
-              </Button>
-            </div>
+            <Tabs defaultValue="pending" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="pending" onClick={() => setActiveTab('pending')}>Your Worries ({pendingWorries.length})</TabsTrigger>
+                <TabsTrigger value="completed" onClick={() => setActiveTab('completed')}>Completed ({completedWorries.length})</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </CardHeader>
           <CardContent>
             {activeTab === 'pending' && (
