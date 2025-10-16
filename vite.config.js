@@ -4,9 +4,8 @@ import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  // FIX: Set the base path to relative (./) instead of absolute (/)
-  // This ensures assets like CSS and JS are correctly found after deployment.
-  base: './', 
+  // This ensures assets are correctly found after deployment.
+  base: '/', 
   plugins: [react()],
   resolve: {
     alias: {
