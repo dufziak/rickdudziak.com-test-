@@ -91,8 +91,7 @@ function App() {
            <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
         </Routes>
       </div>
-      {/* The Toaster component is correctly placed outside the routing logic */}
-      <Toaster />
+
     </>
   );
 }

@@ -6,7 +6,7 @@ import React from 'react';
 
 const ToastProvider = ToastPrimitives.Provider;
 
-const ToastViewport = React.forwardRef(({ className, ...props }, ref) => (
+const ToastViewport = React.forwardRef(({ className, ...props }, ref ) => (
 	<ToastPrimitives.Viewport
 		ref={ref}
 		className={cn(
@@ -34,13 +34,14 @@ const toastVariants = cva(
 	},
 );
 
-// This definition was likely corrupted/missing, causing the export error.
+// FIX APPLIED HERE: Destructure 'dismiss' to prevent passing it to the underlying DOM element
 const Toast = React.forwardRef(({ className, variant, ...props }, ref) => {
+    const { dismiss, ...restProps } = props;
 	return (
 		<ToastPrimitives.Root
 			ref={ref}
 			className={cn(toastVariants({ variant }), className)}
-			{...props}
+			{...restProps}
 		/>
 	);
 });

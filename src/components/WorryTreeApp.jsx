@@ -4,9 +4,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, ArrowLeft, Loader2, CheckCircle, XCircle, ArrowRight, Clock } from 'lucide-react';
+import { toast } from 'react-toastify'; 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'; 
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; 
+import { Calendar } from '@/components/ui/calendar'; 
+import { format } from 'date-fns'; 
+import { Trash2, ArrowLeft, Loader2, CheckCircle, XCircle, ArrowRight, Clock, Calendar as CalendarIcon } from 'lucide-react'; 
 import { Link } from 'react-router-dom';
-import { useToast } from '@/components/ui/use-toast';
 import {
   collection,
   addDoc,
@@ -18,6 +31,36 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
+import { cn } from '@/lib/utils';
+
+// Helper component for displaying detail rows in the modal
+const DetailRow = ({ title, value, className }) => (
+    <div className={cn("flex flex-col space-y-0.5", className)}>
+        <span className="text-sm font-medium text-[#a0a0a0]">{title}:</span>
+        <span className="text-white break-words">{value || '—'}</span>
+    </div>
+);
+
+// NEW HELPER FUNCTION to parse the structured solution string
+const parseActionSolution = (solutionString) => {
+    if (!solutionString || typeof solutionString !== 'string') return { what: null, how: null };
+
+    const whatMatch = solutionString.match(/\[WHAT\]: (.*?) \|/);
+    const howMatch = solutionString.match(/\[HOW\]: (.*)/);
+
+    // If it was a simple Step 6 (Act Now) action, it won't have the tags
+    if (!solutionString.includes('[WHAT]:')) {
+        return { what: solutionString, how: 'N/A (Immediate Action)' };
+    }
+
+    let what = whatMatch && whatMatch[1] ? whatMatch[1].trim() : '—';
+    let how = howMatch && howMatch[1] ? howMatch[1].trim() : '—';
+
+    // Clean up "Not specified" placeholder
+    if (how === 'Not specified') how = '—';
+
+    return { what, how };
+};
 
 const WorryTreeApp = ({ currentUser }) => {
   const [worries, setWorries] = useState([]);
@@ -29,11 +72,28 @@ const WorryTreeApp = ({ currentUser }) => {
   const [worryType, setWorryType] = useState(null);
   const [activeTab, setActiveTab] = useState('pending');
 
-  const [scheduledSolution, setScheduledSolution] = useState('');
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
+  // ACTION PLANNING STATE
+  const [scheduledAction, setScheduledAction] = useState(''); 
+  const [scheduledMethod, setScheduledMethod] = useState(''); 
+  const [scheduledDate, setScheduledDate] = useState(''); 
+  
+  // COGNITIVE RESTRUCTURING STATE
+  const [worryEvidence, setWorryEvidence] = useState('');
+  const [worryReframe, setWorryReframe] = useState('');
 
-  const { toast } = useToast();
+  // DELETE DIALOG STATE
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [worryToDelete, setWorryToDelete] = useState(null);
+
+  // OUTCOME EVALUATION STATE
+  const [isReviewingWorry, setIsReviewingWorry] = useState(false);
+  const [worryToReview, setWorryToReview] = useState(null);
+  const [reviewEffectiveness, setReviewEffectiveness] = useState(5); 
+  const [reviewLesson, setReviewLesson] = useState('');
+
+  // NEW STATE FOR DETAILS MODAL
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedWorryForDetails, setSelectedWorryForDetails] = useState(null);
 
   useEffect(() => {
     if (!currentUser) {
@@ -59,12 +119,14 @@ const WorryTreeApp = ({ currentUser }) => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  const saveWorry = async (worryText, type, solution = null, scheduledDateTime = null) => {
+  const saveWorry = async (worryText, type, evidence, reframe, solution = null, scheduledDateTime = null) => {
     setIsAdding(true);
     try {
       await addDoc(collection(db, 'worries'), {
         text: worryText,
         type: type,
+        evidence: evidence,
+        reframe: reframe,
         solution: solution,
         scheduledDateTime: scheduledDateTime,
         userId: currentUser.uid,
@@ -74,82 +136,101 @@ const WorryTreeApp = ({ currentUser }) => {
       resetFlow();
     } catch (e) {
       console.error("Error adding worry: ", e);
+      toast.error("Failed to save worry.");
     } finally {
       setIsAdding(false);
     }
   };
 
-  const deleteWorry = async (id, worryText) => {
-    // NOTE: Using window.confirm is a UX inconsistency. 
-    // It should be replaced with a custom AlertDialog component for visual consistency.
-    const confirmed = window.confirm(`Are you sure you want to delete the worry: "${worryText}"?`);
-
-    if (!confirmed) {
-        return;
-    }
-
+  const confirmDeleteWorry = async (id, worryText) => {
     try {
       await deleteDoc(doc(db, 'worries', id));
-      toast({
-          title: 'Worry Deleted!',
-          description: `The worry "${worryText}" has been removed.`,
-          variant: "destructive"
-      });
+      
+      setWorryToDelete(null);
+      setIsDeleteDialogOpen(false);
+
+      toast.error(`The worry "${worryText}" has been removed.`, { toastId: 'delete-success' });
     } catch (e) {
       console.error("Error deleting worry: ", e);
+      toast.error('There was an error deleting your worry.');
     }
   };
 
-  const completeWorry = async (id) => {
+  const openDeleteDialog = (worry) => {
+      setWorryToDelete(worry);
+      setIsDeleteDialogOpen(true);
+  };
+  
+  // OUTCOME EVALUATION: Open Modal
+  const openReviewModal = (worry) => {
+    setWorryToReview(worry);
+    setIsReviewingWorry(true);
+    setReviewEffectiveness(5); 
+    setReviewLesson('');
+  };
+
+  // NEW: Open Details Modal
+  const openWorryDetails = (worry) => {
+    setSelectedWorryForDetails(worry);
+    setIsDetailsModalOpen(true);
+  };
+
+  // OUTCOME EVALUATION: Submit Review
+  const submitWorryReview = async () => {
+    if (!worryToReview) return;
+
     try {
-      const worryRef = doc(db, 'worries', id);
-      await updateDoc(worryRef, { status: 'completed' });
-      
-      const messages = [
-        "Great job tackling that worry!",
-        "Another worry conquered!",
-        "You're doing amazing!",
-        "Way to go! You've got this.",
-      ];
-      const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+        const worryRef = doc(db, 'worries', worryToReview.id);
+        
+        await updateDoc(worryRef, { 
+            status: 'completed',
+            effectivenessRating: reviewEffectiveness,
+            lessonLearned: reviewLesson,
+            completedAt: new Date(),
+        });
 
-      toast({
-        title: 'Worry Completed!',
-        description: randomMessage,
-      });
+        setIsReviewingWorry(false);
+        setWorryToReview(null);
+        
+        toast.success("Worry reviewed and completed! Great job learning from this experience.");
+
     } catch (e) {
-      console.error("Error completing worry: ", e);
+        console.error("Error completing worry review: ", e);
+        toast.error("Failed to save the review and complete the worry.");
     }
   };
 
+  // UPDATED: Logic removed scheduledTime validation and uses date-only for Date object construction
   const handleScheduleWorry = () => {
-    if (scheduledSolution.trim() !== '' && scheduledDate !== '' && scheduledTime !== '') {
-      const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
-      // FIX: Use the existing worryType ('actionable') to preserve context, instead of hardcoding 'scheduled'.
-      saveWorry(currentWorry, worryType, scheduledSolution, scheduledDateTime);
+    // Validate required fields: Action (What) and Date (When)
+    if (scheduledAction.trim() !== '' && scheduledDate !== '') {
+        
+      // Combine structured plan into a single solution string for storage
+      const finalSolution = `[WHAT]: ${scheduledAction} | [HOW]: ${scheduledMethod || 'Not specified'}`; 
       
-      // FIX: The custom styling here
-      // 💥 UPDATED: Removed the custom className for standardized toast styling.
-      toast({
-        title: 'Worry Scheduled!',
-        description: `Your worry is scheduled for ${new Date(scheduledDateTime).toLocaleString()}.`,
-      });
+      // Use date string to create Date object (defaults to midnight UTC for that date)
+      const scheduledDateTime = new Date(scheduledDate); 
+      
+      saveWorry(currentWorry, worryType, worryEvidence, worryReframe, finalSolution, scheduledDateTime);
+      
+      toast.info(`Worry Scheduled! It's filed for ${new Date(scheduledDateTime).toLocaleDateString()}.`);
+
     } else {
-        toast({
-            title: 'Missing Information',
-            description: 'Please provide a solution, date, and time to schedule your worry.',
-            variant: "destructive"
-        });
+        // Updated warning text
+        toast.warn('Please provide the action and date to schedule your worry.');
     }
   };
   
+  // UPDATED: resetFlow no longer clears scheduledTime
   const resetFlow = () => {
     setCurrentWorry('');
     setStep(1);
     setWorryType(null);
-    setScheduledSolution('');
+    setScheduledAction('');
+    setScheduledMethod('');
     setScheduledDate('');
-    setScheduledTime('');
+    setWorryEvidence('');
+    setWorryReframe('');
   };
 
   const handleBackStep = () => {
@@ -166,6 +247,16 @@ const WorryTreeApp = ({ currentUser }) => {
         </div>
     );
   }
+  
+  // Helper function to handle date selection from the Calendar component
+  const handleDateSelect = (dateObject) => {
+    if (dateObject) {
+      // Set the state as a YYYY-MM-DD string required for the ISO date construction
+      setScheduledDate(format(dateObject, 'yyyy-MM-dd')); 
+    } else {
+      setScheduledDate('');
+    }
+  };
 
   return (
     <div className="min-h-screen p-8 relative overflow-hidden">
@@ -192,6 +283,7 @@ const WorryTreeApp = ({ currentUser }) => {
           </p>
         </div>
 
+        {/* Step 1: Input Worry */}
         {step === 1 && (
           <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
             <CardHeader>
@@ -214,6 +306,7 @@ const WorryTreeApp = ({ currentUser }) => {
           </Card>
         )}
 
+        {/* Start of multi-step flow (Steps 2-7) */}
         {step > 1 && (
           <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
             <CardHeader>
@@ -229,44 +322,87 @@ const WorryTreeApp = ({ currentUser }) => {
                     <ArrowLeft size={16} className="mr-1" /> Back
                   </motion.button>
                 )}
-                <span>Step {step - 1} of 5</span>
+                <span>Step {step - 1} of 6</span> 
               </div>
-              {step === 2 && <CardTitle className="text-white">Is this a worry you can do something about?</CardTitle>}
-              {step === 3 && worryType === 'actionable' && <CardTitle className="text-white">Can you take action right now?</CardTitle>}
-              {step === 4 && worryType === 'let-it-go' && <CardTitle className="text-white">Let it go.</CardTitle>}
-              {step === 5 && <CardTitle className="text-white">What will you do?</CardTitle>}
-              {step === 6 && <CardTitle className="text-white">Schedule It</CardTitle>}
+              {step === 2 && <CardTitle className="text-white">Challenge the Thought</CardTitle>}
+              {step === 3 && <CardTitle className="text-white">Is this a worry you can do something about?</CardTitle>}
+              {step === 4 && worryType === 'actionable' && <CardTitle className="text-white">Can you take action right now?</CardTitle>}
+              {step === 5 && worryType === 'let-it-go' && <CardTitle className="text-white">Acknowledge and Release</CardTitle>}
+              {step === 6 && <CardTitle className="text-white">What will you do?</CardTitle>}
+              {step === 7 && <CardTitle className="text-white">Schedule It</CardTitle>}
             </CardHeader>
             <CardContent>
+
+              {/* Step 2: Cognitive Restructuring (Evidence and Reframe) */}
               {step === 2 && (
-                <div className="flex space-x-2">
-                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(3); }}>Yes, I can act</Button>
-                  <Button className="flex-1 rounded-full bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('let-it-go'); setStep(4); }}>No, I can't</Button>
+                <div className="space-y-4">
+                  <textarea
+                    value={worryEvidence}
+                    onChange={(e) => setWorryEvidence(e.target.value)}
+                    placeholder="List the facts that support your worry, and the facts that disprove it. (Focus on reality, not just feelings.)"
+                    className="w-full min-h-[80px] p-2 bg-[#121212] text-white border border-[#333] rounded focus:ring-1 focus:ring-[#00ff88]"
+                  />
+                  <textarea
+                    value={worryReframe}
+                    onChange={(e) => setWorryReframe(e.target.value)}
+                    placeholder="Write a balanced, realistic alternative thought to replace your original worry."
+                    className="w-full min-h-[80px] p-2 bg-[#121212] text-white border border-[#333] rounded focus:ring-1 focus:ring-[#00ff88]"
+                  />
+                  <Button 
+                    onClick={() => setStep(3)} 
+                    disabled={!worryEvidence.trim() || !worryReframe.trim()} 
+                    className="w-full rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]"
+                  >
+                    Next: Categorize Worry <ArrowRight className="h-5 w-5 ml-2" />
+                  </Button>
                 </div>
               )}
-              {step === 3 && worryType === 'actionable' && (
+
+              {/* Step 3: Actionable? */}
+              {step === 3 && (
                 <div className="flex space-x-2">
-                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => setStep(5)}>Yes, Now</Button>
-                  <Button className="flex-1 rounded-full bg-blue-500 hover:bg-blue-600" onClick={() => setStep(6)}>No, Later</Button>
+                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(4); }}>Yes, I can act</Button>
+                  <Button className="flex-1 rounded-full bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('let-it-go'); setStep(5); }}>No, I can't</Button>
                 </div>
               )}
-              {step === 4 && worryType === 'let-it-go' && (
+              
+              {/* Step 4: Act Now? */}
+              {step === 4 && worryType === 'actionable' && (
+                <div className="flex space-x-2">
+                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => setStep(6)}>Yes, Now</Button>
+                  <Button className="flex-1 rounded-full bg-blue-500 hover:bg-blue-600" onClick={() => setStep(7)}>No, Later</Button>
+                </div>
+              )}
+
+              {/* Step 5: Let it Go (Non-actionable) */}
+              {step === 5 && worryType === 'let-it-go' && (
                 <>
                   <p className="text-[#a0a0a0] mb-4">
-                    If you can't do anything about a worry, it's best to acknowledge it and let it go. This is a key skill in managing anxiety.
+                    If you can't do anything about a worry, it's best to acknowledge it and let it go. Focus on your new balanced thought (Reframe).
                   </p>
-                  <Button onClick={() => saveWorry(currentWorry, worryType)} className="w-full rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                  <Button 
+                    onClick={() => {
+                      saveWorry(currentWorry, worryType, worryEvidence, worryReframe);
+                      toast.info("Worry released! Acknowledged and filed away."); 
+                    }} 
+                    className="w-full rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]"
+                  >
                     <CheckCircle className="h-5 w-5 mr-2" />
                     I'm Ready to Let It Go
                   </Button>
                 </>
               )}
-              {step === 5 && (
+              
+              {/* Step 6: Action Plan (Act Now) */}
+              {step === 6 && (
                 <form onSubmit={(e) => {
                   e.preventDefault();
                   const solution = e.target.solution.value;
                   if (solution.trim() !== '') {
-                    saveWorry(currentWorry, worryType, solution);
+                    saveWorry(currentWorry, worryType, worryEvidence, worryReframe, solution);
+                    toast.success("Action plan saved! Time to execute.");
+                  } else {
+                    toast.warn("Please enter a plan before saving.");
                   }
                 }} className="flex space-x-2">
                   <Input
@@ -280,24 +416,64 @@ const WorryTreeApp = ({ currentUser }) => {
                   </Button>
                 </form>
               )}
-              {step === 6 && (
+              
+              {/* Step 7: Schedule It (Structured Action Planning) */}
+              {step === 7 && (
                 <>
                   <p className="text-[#a0a0a0] mb-4 text-sm">
-                    Set a specific date and/or time to deal with this. Once scheduled, let the worry go until then.
+                    Set a specific date for your action. This planning ensures clarity and commitment.
                   </p>
-                  <div className="flex space-x-2">
-                    <Input type="date" className="flex-1" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)}/>
-                    <Input type="time" className="flex-1" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)}/>
-                  </div>
+
+                  {/* 1. WHAT WILL YOU DO? */}
                   <Input
-                    type="text"
-                    name="solution"
-                    placeholder="e.g., Call the bank"
-                    className="w-full mt-4"
-                    value={scheduledSolution}
-                    onChange={(e) => setScheduledSolution(e.target.value)}
+                      type="text"
+                      name="scheduledAction"
+                      placeholder="What will you do? (e.g., Email the supervisor)"
+                      className="w-full mt-4"
+                      value={scheduledAction}
+                      onChange={(e) => setScheduledAction(e.target.value)}
                   />
-                  {/* FIX: The button now uses isAdding for disabled state and shows a loader to prevent double submission. */}
+
+                  {/* 2. WHEN WILL YOU DO IT? */}
+                  <div className="mt-4">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                                "w-full justify-start text-left font-normal bg-[#121212] text-white border border-[#333] hover:bg-[#222]",
+                                !scheduledDate && "text-gray-400"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {scheduledDate ? (
+                                format(new Date(scheduledDate), "PPP")
+                            ) : (
+                                <span>Pick a date</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 bg-[#1e1e1e] border border-[#2a2a2a]">
+                          <Calendar
+                            mode="single"
+                            selected={scheduledDate ? new Date(scheduledDate) : undefined}
+                            onSelect={handleDateSelect}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                  </div>
+
+                  {/* 3. HOW WILL YOU DO IT? */}
+                  <Input
+                      type="text"
+                      name="scheduledMethod"
+                      placeholder="How will you do it? (e.g., From the coffee shop, first thing in the morning)"
+                      className="w-full mt-4"
+                      value={scheduledMethod}
+                      onChange={(e) => setScheduledMethod(e.target.value)}
+                  />
+
                   <Button 
                     className="w-full rounded-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" 
                     onClick={handleScheduleWorry}
@@ -311,6 +487,7 @@ const WorryTreeApp = ({ currentUser }) => {
           </Card>
         )}
         
+        {/* Worry List Tabs */}
         <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center space-x-2">
@@ -342,17 +519,18 @@ const WorryTreeApp = ({ currentUser }) => {
                 {pendingWorries.length === 0 ? (
                   <p className="text-[#a0a0a0] text-center">No pending worries. Add one above!</p>
                 ) : (
-                  <ul className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                  <ul className="space-y-4 max-h-96 overflow-y-auto overflow-x-hidden">
                     <AnimatePresence>
                       {pendingWorries.map((worry) => (
                         <motion.li
                           key={worry.id}
+                          onClick={() => openWorryDetails(worry)}
+                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a] cursor-pointer"
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -50, transition: { duration: 0.3 } }}
                           transition={{ duration: 0.4 }}
                           layout
-                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a]"
                         >
                           <div className="flex-1 space-y-1">
                             <span className="text-white">{worry.text}</span>
@@ -376,14 +554,16 @@ const WorryTreeApp = ({ currentUser }) => {
                                 )}
                               </div>
                             )}
+                            {/* UPDATED: Display structured Action Plan */}
                             {worry.solution && (
-                              <p className="text-[#888] text-xs mt-1">
-                                Action: {worry.solution}
-                              </p>
+                                <div className="text-[#888] text-xs mt-1 space-y-0.5">
+                                    <p>What: **{parseActionSolution(worry.solution).what}**</p>
+                                    <p>How: {parseActionSolution(worry.solution).how}</p>
+                                </div>
                             )}
                              {worry.scheduledDateTime && (
                                 <p className="text-[#888] text-xs mt-1">
-                                  Scheduled for: {new Date(worry.scheduledDateTime.seconds * 1000).toLocaleString()}
+                                  Scheduled for: {new Date(worry.scheduledDateTime.seconds * 1000).toLocaleDateString()}
                                 </p>
                               )}
                           </div>
@@ -391,7 +571,7 @@ const WorryTreeApp = ({ currentUser }) => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => completeWorry(worry.id)}
+                              onClick={(e) => {e.stopPropagation(); openReviewModal(worry)}}
                               className="text-[#a0a0a0] hover:text-green-500 transition-colors duration-200"
                             >
                               <CheckCircle className="h-4 w-4" />
@@ -399,7 +579,7 @@ const WorryTreeApp = ({ currentUser }) => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => deleteWorry(worry.id, worry.text)}
+                              onClick={(e) => {e.stopPropagation(); openDeleteDialog(worry)}}
                               className="text-[#a0a0a0] hover:text-red-500 transition-colors duration-200"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -429,25 +609,32 @@ const WorryTreeApp = ({ currentUser }) => {
                       {completedWorries.map((worry) => (
                         <motion.li
                           key={worry.id}
+                          onClick={() => openWorryDetails(worry)}
+                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a] opacity-60 cursor-pointer"
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: 50, transition: { duration: 0.3 } }}
                           transition={{ duration: 0.4 }}
                           layout
-                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a] opacity-60"
                         >
                           <div className="flex-1 space-y-1">
                             <span className="text-white line-through">{worry.text}</span>
                             {worry.solution && (
-                              <p className="text-[#888] text-xs mt-1">
-                                Action: {worry.solution}
-                              </p>
+                                <div className="text-[#888] text-xs mt-1 space-y-0.5">
+                                    <p>What: **{parseActionSolution(worry.solution).what}**</p>
+                                    <p>How: {parseActionSolution(worry.solution).how}</p>
+                                </div>
+                            )}
+                            {worry.lessonLearned && (
+                                <p className="text-[#00ff88] text-xs mt-1">
+                                    Learned: {worry.lessonLearned} (Rating: {worry.effectivenessRating}/5)
+                                </p>
                             )}
                           </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteWorry(worry.id, worry.text)}
+                            onClick={(e) => {e.stopPropagation(); openDeleteDialog(worry)}}
                             className="text-[#a0a0a0] hover:text-red-500 transition-colors duration-200"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -462,6 +649,169 @@ const WorryTreeApp = ({ currentUser }) => {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* WORRY DETAILS MODAL */}
+      {isDetailsModalOpen && selectedWorryForDetails && (
+          <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70"
+          >
+              <motion.div
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  className="w-full max-w-lg p-6 bg-[#1e1e1e] border border-[#2a2a2a] rounded-lg shadow-2xl space-y-6 overflow-y-auto max-h-[90vh]"
+              >
+                  <h2 className="text-2xl font-bold text-[#00ff88]">Worry Details</h2>
+                  
+                  <div className="space-y-4">
+                      <DetailRow title="Worry" value={selectedWorryForDetails.text} className="text-lg font-semibold" />
+                      <DetailRow title="Status" value={selectedWorryForDetails.status.charAt(0).toUpperCase() + selectedWorryForDetails.status.slice(1)} />
+                      <DetailRow title="Category" value={selectedWorryForDetails.type === 'actionable' ? 'Actionable' : 'Non-Actionable (Let It Go)'} />
+                      
+                      <h3 className="text-lg font-semibold text-white pt-3 border-t border-[#333]">Cognitive Restructuring</h3>
+                      <DetailRow title="Evidence/Facts Check" value={selectedWorryForDetails.evidence} />
+                      <DetailRow title="Balanced Reframe" value={selectedWorryForDetails.reframe} />
+
+                      {selectedWorryForDetails.solution && (
+                          <div className="pt-3 border-t border-[#333]">
+                              <h3 className="text-lg font-semibold text-white">Action Plan</h3>
+                              <DetailRow title="What (Action)" value={parseActionSolution(selectedWorryForDetails.solution).what} />
+                              <DetailRow title="How (Method)" value={parseActionSolution(selectedWorryForDetails.solution).how} />
+                          </div>
+                      )}
+
+                      {selectedWorryForDetails.scheduledDateTime && (
+                          <DetailRow 
+                              title="Scheduled For" 
+                              // FIX APPLIED HERE: Used toLocaleDateString() to remove time
+                              value={new Date(selectedWorryForDetails.scheduledDateTime.seconds * 1000).toLocaleDateString()} 
+                          />
+                      )}
+
+                      {selectedWorryForDetails.status === 'completed' && (
+                          <div className="pt-3 border-t border-[#333] space-y-2">
+                              <h3 className="text-lg font-semibold text-[#00ff88]">Outcome Evaluation</h3>
+                              <DetailRow title="Effectiveness Rating" value={`${selectedWorryForDetails.effectivenessRating || 'N/A'}/5`} />
+                              <DetailRow title="Lesson Learned" value={selectedWorryForDetails.lessonLearned} />
+                              {selectedWorryForDetails.completedAt && (
+                                  <DetailRow title="Completed On" value={new Date(selectedWorryForDetails.completedAt.seconds * 1000).toLocaleDateString()} />
+                              )}
+                          </div>
+                      )}
+                  </div>
+                  
+                  <div className="flex justify-end">
+                      <Button 
+                          onClick={() => {
+                            setIsDetailsModalOpen(false);
+                            setSelectedWorryForDetails(null);
+                          }}
+                          className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]"
+                      >
+                          Close
+                      </Button>
+                  </div>
+              </motion.div>
+          </motion.div>
+      )}
+
+
+      {/* OUTCOME EVALUATION MODAL */}
+      {isReviewingWorry && (
+          <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70"
+          >
+              <motion.div
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  className="w-full max-w-lg p-6 bg-[#1e1e1e] border border-[#2a2a2a] rounded-lg shadow-2xl space-y-4"
+              >
+                  <h2 className="text-xl font-bold text-[#00ff88]">Review Outcome</h2>
+                  <p className="text-white">Worry: <span className="font-semibold">{worryToReview?.text}</span></p>
+
+                  <div className="space-y-2">
+                      <label className="text-sm font-medium text-[#a0a0a0]">How effective was your plan?</label>
+                      <Input
+                          type="range"
+                          min="1"
+                          max="5"
+                          step="1"
+                          value={reviewEffectiveness}
+                          onChange={(e) => setReviewEffectiveness(Number(e.target.value))}
+                          className="w-full h-2 bg-[#333] rounded-lg appearance-none cursor-pointer range-lg"
+                      />
+                      <div className="flex justify-between text-xs text-[#a0a0a0]">
+                          <span>1 (Not at all)</span>
+                          <span>{reviewEffectiveness} / 5</span>
+                          <span>5 (Completely)</span>
+                      </div>
+                  </div>
+
+                  <div className="space-y-2">
+                      <label htmlFor="lesson" className="text-sm font-medium text-[#a0a0a0]">What did you learn from this experience? (CBT Lesson)</label>
+                      <textarea
+                          id="lesson"
+                          value={reviewLesson}
+                          onChange={(e) => setReviewLesson(e.target.value)}
+                          placeholder="E.g., 'The worry didn't come true,' or 'I am capable of dealing with this.'"
+                          className="w-full min-h-[80px] p-2 bg-[#121212] text-white border border-[#333] rounded focus:ring-1 focus:ring-[#00ff88]"
+                      />
+                  </div>
+                  
+                  <div className="flex justify-end space-x-2">
+                      <Button 
+                          variant="ghost" 
+                          onClick={() => setIsReviewingWorry(false)}
+                          className="text-white hover:bg-[#3a3a3a]"
+                      >
+                          Cancel
+                      </Button>
+                      <Button 
+                          onClick={submitWorryReview}
+                          disabled={!reviewLesson.trim()}
+                          className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]"
+                      >
+                          Complete & Save Review
+                      </Button>
+                  </div>
+              </motion.div>
+          </motion.div>
+      )}
+
+
+      {/* ALERT DIALOG COMPONENT FOR DELETION CONFIRMATION */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-[#1e1e1e] border border-[#2a2a2a] text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-500">Confirm Deletion</AlertDialogTitle>
+            <AlertDialogDescription className="text-[#a0a0a0]">
+              Are you sure you want to delete this worry? This action cannot be undone.
+              <span className="block mt-2 font-bold text-white"> 
+                Worry: "{worryToDelete?.text}"
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-transparent text-white border-none hover:bg-[#333]">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => worryToDelete && confirmDeleteWorry(worryToDelete.id, worryToDelete.text)}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={!worryToDelete}
+            >
+              Delete Worry
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
