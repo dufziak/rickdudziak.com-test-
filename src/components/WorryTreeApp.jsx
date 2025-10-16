@@ -129,10 +129,10 @@ const WorryTreeApp = ({ currentUser }) => {
       saveWorry(currentWorry, worryType, scheduledSolution, scheduledDateTime);
       
       // FIX: The custom styling here
+      // 💥 UPDATED: Removed the custom className for standardized toast styling.
       toast({
         title: 'Worry Scheduled!',
         description: `Your worry is scheduled for ${new Date(scheduledDateTime).toLocaleString()}.`,
-        className: "bg-[#1e1e1e] text-white border-2 border-[#00ff88]", 
       });
     } else {
         toast({
