@@ -17,7 +17,9 @@ export function Toaster() {
 			{toasts && toasts.filter(Boolean).map(({ id, title, description, action, ...props }) => {
 				return (
 					<Toast key={id} {...props}>
-						<div className="grid gap-1">
+						{/* FIX: Explicitly adding 'text-white' here ensures the Title and Description 
+                            components inside inherit the correct color, overriding any dark defaults. */}
+						<div className="grid gap-1 text-white">
 							{title && <ToastTitle>{title}</ToastTitle>}
 							{description && (
 								<ToastDescription>{description}</ToastDescription>

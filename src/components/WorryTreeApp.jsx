@@ -4,18 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Trash2, Plus, ArrowLeft, Loader2, CheckCircle, XCircle, Zap, ArrowRight, Clock } from 'lucide-react';
+import { Trash2, ArrowLeft, Loader2, CheckCircle, XCircle, ArrowRight, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import {
   collection,
   addDoc,
-  getDocs,
   deleteDoc,
   doc,
   query,
   where,
   updateDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
 
@@ -36,34 +36,33 @@ const WorryTreeApp = ({ currentUser }) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    const fetchWorries = async () => {
-      if (!currentUser) {
-        setIsLoading(false);
-        return;
-      }
-      try {
-        setIsLoading(true);
-        const q = query(collection(db, 'worries'), where('userId', '==', currentUser.uid));
-        const querySnapshot = await getDocs(q);
-        const fetchedWorries = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setWorries(fetchedWorries);
-      } catch (e) {
-        console.error("Error fetching worries: ", e);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (!currentUser) {
+      setIsLoading(false);
+      return;
+    }
 
-    fetchWorries();
+    const worriesCollection = collection(db, 'worries');
+    const q = query(worriesCollection, where('userId', '==', currentUser.uid));
+    
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedWorries = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setWorries(fetchedWorries);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error fetching real-time worries: ", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, [currentUser]);
 
   const saveWorry = async (worryText, type, solution = null, scheduledDateTime = null) => {
     setIsAdding(true);
     try {
-      const docRef = await addDoc(collection(db, 'worries'), {
+      await addDoc(collection(db, 'worries'), {
         text: worryText,
         type: type,
         solution: solution,
@@ -72,7 +71,6 @@ const WorryTreeApp = ({ currentUser }) => {
         createdAt: new Date(),
         status: 'pending',
       });
-      setWorries([...worries, { id: docRef.id, text: worryText, type: type, solution: solution, scheduledDateTime: scheduledDateTime, status: 'pending' }]);
       resetFlow();
     } catch (e) {
       console.error("Error adding worry: ", e);
@@ -81,36 +79,20 @@ const WorryTreeApp = ({ currentUser }) => {
     }
   };
 
-  const quickAddWorry = async () => {
-    if (currentWorry.trim() === '') return;
-    setIsAdding(true);
-    try {
-      const docRef = await addDoc(collection(db, 'worries'), {
-        text: currentWorry,
-        type: 'scheduled', 
-        solution: null,
-        scheduledDateTime: null,
-        userId: currentUser.uid,
-        createdAt: new Date(),
-        status: 'pending',
-      });
-      setWorries([...worries, { id: docRef.id, text: currentWorry, type: 'scheduled', solution: null, scheduledDateTime: null, status: 'pending' }]);
-      setCurrentWorry(''); 
-      toast({
-        title: 'Worry Added!',
-        description: "It has been saved as a scheduled worry.",
-      });
-    } catch (e) {
-      console.error("Error adding worry: ", e);
-    } finally {
-      setIsAdding(false);
-    }
-  };
+  const deleteWorry = async (id, worryText) => {
+    const confirmed = window.confirm(`Are you sure you want to delete the worry: "${worryText}"?`);
 
-  const deleteWorry = async (id) => {
+    if (!confirmed) {
+        return;
+    }
+
     try {
       await deleteDoc(doc(db, 'worries', id));
-      setWorries(worries.filter((worry) => worry.id !== id));
+      toast({
+          title: 'Worry Deleted!',
+          description: `The worry "${worryText}" has been removed.`,
+          variant: "destructive"
+      });
     } catch (e) {
       console.error("Error deleting worry: ", e);
     }
@@ -129,7 +111,6 @@ const WorryTreeApp = ({ currentUser }) => {
       ];
       const randomMessage = messages[Math.floor(Math.random() * messages.length)];
 
-      setWorries(worries.map(worry => worry.id === id ? { ...worry, status: 'completed' } : worry));
       toast({
         title: 'Worry Completed!',
         description: randomMessage,
@@ -143,6 +124,13 @@ const WorryTreeApp = ({ currentUser }) => {
     if (scheduledSolution.trim() !== '' && scheduledDate !== '' && scheduledTime !== '') {
       const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
       saveWorry(currentWorry, 'scheduled', scheduledSolution, scheduledDateTime);
+      
+      // FIX: The custom styling here
+      toast({
+        title: 'Worry Scheduled!',
+        description: `Your worry is scheduled for ${new Date(scheduledDateTime).toLocaleString()}.`,
+        className: "bg-[#1e1e1e] text-white border-2 border-[#00ff88]", 
+      });
     }
   };
   
@@ -209,10 +197,7 @@ const WorryTreeApp = ({ currentUser }) => {
                   placeholder="Write your worry here..."
                   className="flex-1 bg-[#121212] text-white border-none focus:ring-1 focus:ring-[#00ff88]"
                 />
-                <Button onClick={quickAddWorry} disabled={!currentWorry.trim() || isAdding} className="bg-blue-500 text-white hover:bg-blue-600">
-                   <Zap className="h-5 w-5 mr-2" /> Quick Add
-                </Button>
-                <Button onClick={() => setStep(2)} disabled={!currentWorry.trim()} className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                <Button onClick={() => setStep(2)} disabled={!currentWorry.trim()} className="rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
                   Next <ArrowRight className="h-5 w-5 ml-2" />
                 </Button>
               </div>
@@ -246,14 +231,14 @@ const WorryTreeApp = ({ currentUser }) => {
             <CardContent>
               {step === 2 && (
                 <div className="flex space-x-2">
-                  <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(3); }}>Yes, I can act</Button>
-                  <Button className="flex-1 bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('let-it-go'); setStep(4); }}>No, I can't</Button>
+                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => { setWorryType('actionable'); setStep(3); }}>Yes, I can act</Button>
+                  <Button className="flex-1 rounded-full bg-red-500 hover:bg-red-600" onClick={() => { setWorryType('let-it-go'); setStep(4); }}>No, I can't</Button>
                 </div>
               )}
               {step === 3 && worryType === 'actionable' && (
                 <div className="flex space-x-2">
-                  <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => setStep(5)}>Yes, Now</Button>
-                  <Button className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={() => setStep(6)}>No, Later</Button>
+                  <Button className="flex-1 rounded-full bg-green-500 hover:bg-green-600" onClick={() => setStep(5)}>Yes, Now</Button>
+                  <Button className="flex-1 rounded-full bg-blue-500 hover:bg-blue-600" onClick={() => setStep(6)}>No, Later</Button>
                 </div>
               )}
               {step === 4 && worryType === 'let-it-go' && (
@@ -261,7 +246,7 @@ const WorryTreeApp = ({ currentUser }) => {
                   <p className="text-[#a0a0a0] mb-4">
                     If you can't do anything about a worry, it's best to acknowledge it and let it go. This is a key skill in managing anxiety.
                   </p>
-                  <Button onClick={() => saveWorry(currentWorry, worryType)} className="w-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                  <Button onClick={() => saveWorry(currentWorry, worryType)} className="w-full rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
                     <CheckCircle className="h-5 w-5 mr-2" />
                     I'm Ready to Let It Go
                   </Button>
@@ -281,7 +266,7 @@ const WorryTreeApp = ({ currentUser }) => {
                     placeholder="Plan your action..."
                     className="flex-1 bg-[#121212] text-white border-none focus:ring-1 focus:ring-[#00ff88]"
                   />
-                  <Button type="submit" disabled={isAdding} className="bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
+                  <Button type="submit" disabled={isAdding} className="rounded-full bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]">
                     {isAdding ? <Loader2 className="h-5 w-5 animate-spin" /> : "Save"}
                   </Button>
                 </form>
@@ -303,7 +288,7 @@ const WorryTreeApp = ({ currentUser }) => {
                     value={scheduledSolution}
                     onChange={(e) => setScheduledSolution(e.target.value)}
                   />
-                  <Button className="w-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" onClick={handleScheduleWorry}>
+                  <Button className="w-full rounded-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" onClick={handleScheduleWorry}>
                     Okay, I've Scheduled It
                   </Button>
                 </>
@@ -314,123 +299,151 @@ const WorryTreeApp = ({ currentUser }) => {
         
         <Card className="bg-[#1e1e1e] border border-[#2a2a2a] shadow-lg">
           <CardHeader>
-            <Tabs defaultValue="pending" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="pending" onClick={() => setActiveTab('pending')}>Your Worries ({pendingWorries.length})</TabsTrigger>
-                <TabsTrigger value="completed" onClick={() => setActiveTab('completed')}>Completed ({completedWorries.length})</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex justify-between items-center space-x-2">
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab('pending')}
+                className={`flex-1 text-center rounded-t-lg ${activeTab === 'pending' ? 'text-[#00ff88] border-b-2 border-[#00ff88]' : 'text-[#a0a0a0] border-b-2 border-transparent'}`}
+              >
+                Your Worries
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setActiveTab('completed')}
+                className={`flex-1 text-center rounded-t-lg ${activeTab === 'completed' ? 'text-[#00ff88] border-b-2 border-[#00ff88]' : 'text-[#a0a0a0] border-b-2 border-transparent'}`}
+              >
+                Completed
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {activeTab === 'pending' && (
-              pendingWorries.length === 0 ? (
-                <p className="text-[#a0a0a0] text-center">No pending worries. Add one above!</p>
-              ) : (
-                <ul className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                  <AnimatePresence>
-                    {pendingWorries.map((worry) => (
-                      <motion.li
-                        key={worry.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -50, transition: { duration: 0.3 } }}
-                        transition={{ duration: 0.4 }}
-                        className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a]"
-                      >
-                        <div className="flex-1 space-y-1">
-                          <span className="text-white">{worry.text}</span>
-                          {worry.type && (
-                            <div className="flex items-center text-sm text-[#a0a0a0]">
-                              {worry.type === 'actionable' ? (
-                                <>
-                                  <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                                  <p className="text-green-500">Actionable</p>
-                                </>
-                              ) : worry.type === 'let-it-go' ? (
-                                <>
-                                  <XCircle className="h-4 w-4 mr-2 text-red-500" />
-                                  <p className="text-red-500">Let it go</p>
-                                </>
-                              ) : (
-                                <>
-                                  <Clock className="h-4 w-4 mr-2 text-blue-500" />
-                                  <p className="text-blue-500">Scheduled</p>
-                                </>
-                              )}
-                            </div>
-                          )}
-                          {worry.solution && (
-                            <p className="text-[#888] text-xs mt-1">
-                              Action: {worry.solution}
-                            </p>
-                          )}
-                           {worry.scheduledDateTime && (
+              <motion.div
+                key="pending-tab"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {pendingWorries.length === 0 ? (
+                  <p className="text-[#a0a0a0] text-center">No pending worries. Add one above!</p>
+                ) : (
+                  <ul className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                    <AnimatePresence>
+                      {pendingWorries.map((worry) => (
+                        <motion.li
+                          key={worry.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -50, transition: { duration: 0.3 } }}
+                          transition={{ duration: 0.4 }}
+                          layout
+                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a]"
+                        >
+                          <div className="flex-1 space-y-1">
+                            <span className="text-white">{worry.text}</span>
+                            {worry.type && (
+                              <div className="flex items-center text-sm text-[#a0a0a0]">
+                                {worry.type === 'actionable' ? (
+                                  <>
+                                    <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                                    <p className="text-green-500">Actionable</p>
+                                  </>
+                                ) : worry.type === 'let-it-go' ? (
+                                  <>
+                                    <XCircle className="h-4 w-4 mr-2 text-red-500" />
+                                    <p className="text-red-500">Let it go</p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="h-4 w-4 mr-2 text-blue-500" />
+                                    <p className="text-blue-500">Scheduled</p>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            {worry.solution && (
                               <p className="text-[#888] text-xs mt-1">
-                                Scheduled for: {new Date(worry.scheduledDateTime.seconds * 1000).toLocaleString()}
+                                Action: {worry.solution}
                               </p>
                             )}
-                        </div>
-                        <div className="flex space-x-2">
+                             {worry.scheduledDateTime && (
+                                <p className="text-[#888] text-xs mt-1">
+                                  Scheduled for: {new Date(worry.scheduledDateTime.seconds * 1000).toLocaleString()}
+                                </p>
+                              )}
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => completeWorry(worry.id)}
+                              className="text-[#a0a0a0] hover:text-green-500 transition-colors duration-200"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => deleteWorry(worry.id, worry.text)}
+                              className="text-[#a0a0a0] hover:text-red-500 transition-colors duration-200"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </motion.li>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+              </motion.div>
+            )}
+
+            {activeTab === 'completed' && (
+              <motion.div
+                key="completed-tab"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {completedWorries.length === 0 ? (
+                  <p className="text-[#a0a0a0] text-center">You haven't completed any worries yet. You're capable of great things!</p>
+                ) : (
+                  <ul className="space-y-4">
+                    <AnimatePresence>
+                      {completedWorries.map((worry) => (
+                        <motion.li
+                          key={worry.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: 50, transition: { duration: 0.3 } }}
+                          transition={{ duration: 0.4 }}
+                          layout
+                          className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a] opacity-60"
+                        >
+                          <div className="flex-1 space-y-1">
+                            <span className="text-white line-through">{worry.text}</span>
+                            {worry.solution && (
+                              <p className="text-[#888] text-xs mt-1">
+                                Action: {worry.solution}
+                              </p>
+                            )}
+                          </div>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => completeWorry(worry.id)}
-                            className="text-[#a0a0a0] hover:text-green-500 transition-colors duration-200"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteWorry(worry.id)}
+                            onClick={() => deleteWorry(worry.id, worry.text)}
                             className="text-[#a0a0a0] hover:text-red-500 transition-colors duration-200"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
-                        </div>
-                      </motion.li>
-                    ))}
-                  </AnimatePresence>
-                </ul>
-              )
-            )}
-
-            {activeTab === 'completed' && (
-              completedWorries.length === 0 ? (
-                <p className="text-[#a0a0a0] text-center">You haven't completed any worries yet. You're capable of great things!</p>
-              ) : (
-                <ul className="space-y-4">
-                  <AnimatePresence>
-                  {completedWorries.map((worry) => (
-                    <motion.li
-                      key={worry.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: 50, transition: { duration: 0.3 } }}
-                      transition={{ duration: 0.4 }}
-                      className="flex items-center justify-between p-4 bg-[#2a2a2a] rounded-lg shadow-sm transition-all duration-200 hover:bg-[#3a3a3a] opacity-60"
-                    >
-                      <div className="flex-1 space-y-1">
-                        <span className="text-white line-through">{worry.text}</span>
-                        {worry.solution && (
-                          <p className="text-[#888] text-xs mt-1">
-                            Action: {worry.solution}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteWorry(worry.id)}
-                        className="text-[#a0a0a0] hover:text-red-500 transition-colors duration-200"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </motion.li>
-                  ))}
-                  </AnimatePresence>
-                </ul>
-              )
+                        </motion.li>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+              </motion.div>
             )}
           </CardContent>
         </Card>

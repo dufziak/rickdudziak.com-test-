@@ -75,7 +75,8 @@ ToastClose.displayName = ToastPrimitives.Close.displayName;
 const ToastTitle = React.forwardRef(({ className, ...props }, ref) => (
 	<ToastPrimitives.Title
 		ref={ref}
-		className={cn('text-sm font-semibold', className)}
+        // FIX: Ensuring white text color
+		className={cn('text-sm font-semibold text-white', className)} 
 		{...props}
 	/>
 ));
@@ -84,7 +85,8 @@ ToastTitle.displayName = ToastPrimitives.Title.displayName;
 const ToastDescription = React.forwardRef(({ className, ...props }, ref) => (
 	<ToastPrimitives.Description
 		ref={ref}
-		className={cn('text-sm opacity-90', className)}
+        // FIX: Ensuring white text color and full opacity
+		className={cn('text-sm opacity-100 text-white', className)} 
 		{...props}
 	/>
 ));

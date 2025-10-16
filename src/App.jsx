@@ -6,7 +6,7 @@ import ProjectsPage from '@/components/ProjectsPage';
 import WeatherDashboard from '@/components/WeatherDashboard';
 import TaskManagementApp from '@/components/TaskManagementApp';
 import WorryTreeApp from '@/components/WorryTreeApp';
-import { Toaster } from '@/components/ui/toaster';
+import { Toaster } from '@/components/ui/toaster'; // Toaster is correctly imported here
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase'; // Import your Firebase auth instance
 
@@ -91,6 +91,8 @@ function App() {
            <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
         </Routes>
       </div>
+      {/* The Toaster component needs to be rendered at the app's root to work correctly */}
+      <Toaster />
     </>
   );
 }
