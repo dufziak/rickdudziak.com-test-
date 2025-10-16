@@ -80,6 +80,8 @@ const WorryTreeApp = ({ currentUser }) => {
   };
 
   const deleteWorry = async (id, worryText) => {
+    // NOTE: Using window.confirm is a UX inconsistency. 
+    // It should be replaced with a custom AlertDialog component for visual consistency.
     const confirmed = window.confirm(`Are you sure you want to delete the worry: "${worryText}"?`);
 
     if (!confirmed) {
@@ -123,7 +125,8 @@ const WorryTreeApp = ({ currentUser }) => {
   const handleScheduleWorry = () => {
     if (scheduledSolution.trim() !== '' && scheduledDate !== '' && scheduledTime !== '') {
       const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}`);
-      saveWorry(currentWorry, 'scheduled', scheduledSolution, scheduledDateTime);
+      // FIX: Use the existing worryType ('actionable') to preserve context, instead of hardcoding 'scheduled'.
+      saveWorry(currentWorry, worryType, scheduledSolution, scheduledDateTime);
       
       // FIX: The custom styling here
       toast({
@@ -131,6 +134,12 @@ const WorryTreeApp = ({ currentUser }) => {
         description: `Your worry is scheduled for ${new Date(scheduledDateTime).toLocaleString()}.`,
         className: "bg-[#1e1e1e] text-white border-2 border-[#00ff88]", 
       });
+    } else {
+        toast({
+            title: 'Missing Information',
+            description: 'Please provide a solution, date, and time to schedule your worry.',
+            variant: "destructive"
+        });
     }
   };
   
@@ -288,8 +297,13 @@ const WorryTreeApp = ({ currentUser }) => {
                     value={scheduledSolution}
                     onChange={(e) => setScheduledSolution(e.target.value)}
                   />
-                  <Button className="w-full rounded-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" onClick={handleScheduleWorry}>
-                    Okay, I've Scheduled It
+                  {/* FIX: The button now uses isAdding for disabled state and shows a loader to prevent double submission. */}
+                  <Button 
+                    className="w-full rounded-full mt-4 bg-[#00ff88] text-[#121212] hover:bg-[#00dd77]" 
+                    onClick={handleScheduleWorry}
+                    disabled={isAdding}
+                  >
+                    {isAdding ? <Loader2 className="h-5 w-5 animate-spin" /> : "Okay, I've Scheduled It"}
                   </Button>
                 </>
               )}

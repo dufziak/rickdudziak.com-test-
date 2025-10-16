@@ -34,6 +34,7 @@ const toastVariants = cva(
 	},
 );
 
+// This definition was likely corrupted/missing, causing the export error.
 const Toast = React.forwardRef(({ className, variant, ...props }, ref) => {
 	return (
 		<ToastPrimitives.Root
@@ -75,7 +76,7 @@ ToastClose.displayName = ToastPrimitives.Close.displayName;
 const ToastTitle = React.forwardRef(({ className, ...props }, ref) => (
 	<ToastPrimitives.Title
 		ref={ref}
-        // FIX: Ensuring white text color
+        // FIX: Explicitly set text color to white for visibility
 		className={cn('text-sm font-semibold text-white', className)} 
 		{...props}
 	/>
@@ -85,7 +86,7 @@ ToastTitle.displayName = ToastPrimitives.Title.displayName;
 const ToastDescription = React.forwardRef(({ className, ...props }, ref) => (
 	<ToastPrimitives.Description
 		ref={ref}
-        // FIX: Ensuring white text color and full opacity
+        // FIX: Explicitly set text color to white and ensure full opacity
 		className={cn('text-sm opacity-100 text-white', className)} 
 		{...props}
 	/>

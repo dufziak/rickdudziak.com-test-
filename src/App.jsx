@@ -6,9 +6,9 @@ import ProjectsPage from '@/components/ProjectsPage';
 import WeatherDashboard from '@/components/WeatherDashboard';
 import TaskManagementApp from '@/components/TaskManagementApp';
 import WorryTreeApp from '@/components/WorryTreeApp';
-import { Toaster } from '@/components/ui/toaster'; // Toaster is correctly imported here
+import { Toaster } from '@/components/ui/toaster'; 
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase'; // Import your Firebase auth instance
+import { auth } from './firebase'; 
 
 const ProtectedRoute = ({ currentUser, children }) => {
   if (!currentUser) {
@@ -53,8 +53,8 @@ function App() {
       </Helmet>
       
       <div className="min-h-screen bg-[#121212]">
+        {/* ⭐ CORRECT: Only <Routes> is here, no nested <Router> ⭐ */}
         <Routes>
-          {/* The login page no longer needs onLogin prop */}
           <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LandingPage />} />
           <Route 
             path="/" 
@@ -91,7 +91,7 @@ function App() {
            <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
         </Routes>
       </div>
-      {/* The Toaster component needs to be rendered at the app's root to work correctly */}
+      {/* The Toaster component is correctly placed outside the routing logic */}
       <Toaster />
     </>
   );
